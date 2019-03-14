@@ -5,6 +5,13 @@ import java.util.*;
 
 import static javax.swing.JOptionPane.showInputDialog;
 
+class SortBySum implements java.util.Comparator<State> {
+
+    @Override
+    public int compare(State o1, State o2) {
+        return (o1.getLevel() + o1.getSum()) - (o2.getLevel() + o2.getSum());
+    }
+}
 interface Heuristic {
     int calculateSum(State currentState, State goalState);
 }
@@ -73,11 +80,13 @@ class TilePlacement implements Heuristic {
 
 class State implements Comparable<State> {
     private int level;
+    private int sum;
     private int[] state;
 
     public State(int[] state, int level){
         this.state = state;
         this.level = level;
+        sum = -1;
     }
 
     public int[] getState() {
@@ -87,6 +96,15 @@ class State implements Comparable<State> {
     public int getLevel() {
         return level;
     }
+
+    public int getSum() {
+        return sum;
+    }
+
+    public void setSum(int sum) {
+        this.sum = sum;
+    }
+
     private String stateToString() {
         int sqrt = (int)Math.sqrt(state.length);
         StringBuilder sb = new StringBuilder("| ");
@@ -106,7 +124,8 @@ class State implements Comparable<State> {
         if(this == that) return true;
 
         if(that instanceof  State) {
-            return Arrays.equals(state, ((State)that).state);
+            State other = (State)that;
+            return Arrays.equals(state, other.state);
         }
 
         return false;
@@ -167,6 +186,13 @@ class Utils {
         return newStates;
     }
 
+    /**
+     * AI method with no human interaction
+     * @param heuristics
+     * @param currentState
+     * @param goalState
+     * @return
+     */
     public static int calculateBestMove(List<Heuristic> heuristics, State currentState, State goalState) {
         int best = -1;
 
@@ -185,13 +211,21 @@ class Utils {
 
         return arr;
     }
+
+    public static int[] stringToIntArr(String[] arr) {
+        int[] tmp = new int[arr.length];
+
+        for(int i = 0; i < arr.length; i++) tmp[i] = Integer.parseInt(arr[i]);
+
+        return tmp;
+    }
 }
 
 public class Main {
 
     public static void main(String[] args) {
         String startState = showInputDialog(null,
-                "Enter initial state", "0 1 3 4 5 2 6 8 9 10 7 11 13 14 15 12");
+                "Enter initial state", "1 2 3 4 5 10 6 8 9 7 0 11 13 14 15 12");
         String endState = showInputDialog(null,
                 "Enter end state", "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 0");
 
@@ -201,16 +235,16 @@ public class Main {
                 && endState.replaceAll("\\d+", "").trim().equals("")) {
 
             //clean up spaces and spilt elements
-            String[] startStateArr = startState.replaceAll("\\s+", " ").trim().split(" ");
-            String[] endStateArr = endState.replaceAll("\\s+", " ").trim().split(" ");
+            int[] firstState = Utils.stringToIntArr(startState.replaceAll("\\s+", " ").trim().split(" "));
+            int[] goalState = Utils.stringToIntArr(endState.replaceAll("\\s+", " ").trim().split(" "));
 
-            //Make sure user entered a valid order array
-            Set<String> sortedStartSet = new TreeSet<>(Arrays.asList(startStateArr));
-            Set<String> sortedEndSet = new TreeSet<>(Arrays.asList(endStateArr));
-            Set<String> testSet = new TreeSet<>();
+            int[] sortedStart = firstState.clone();
+            int[] sortedEnd = goalState.clone();
+            Arrays.sort(sortedStart);
+            Arrays.sort(sortedEnd);
 
-            int sLen = startStateArr.length;
-            int eLen = endStateArr.length;
+            int sLen = sortedStart.length;
+            int eLen = sortedEnd.length;
 
             boolean isStartSquare = Math.sqrt(sLen) % 1 == 0.0;
             boolean isEndSquare = Math.sqrt(eLen) % 1 == 0.0;
@@ -223,21 +257,21 @@ public class Main {
                         "Matrix sizes don't match A=" + sLen + " B=" + eLen);
             } else {
 
-                /* Build an ordered set of values from 0 to n
-                 * a valid matrix must start at 0 to n, so if a user
-                 * inputs 0,1,2,4 the testSet will be 0,1,2,3 therefore
-                 * the users matrix is not valid
-                 */
+                int[] sortTest = new int[sLen];
+
                 for(int i = 0; i < sLen; i++) {
-                    testSet.add("" + i); //make a sorted set of array size
+                    sortTest[i] =  i; //make a sorted set of array size
                 }
 
-                if(sortedStartSet.equals(testSet) && sortedEndSet.equals(testSet)){
-                    findEndState(startStateArr, endStateArr);
+                if(Arrays.equals(sortedStart, sortTest) && Arrays.equals(sortedEnd, sortTest) ){
+                    findEndState(firstState, goalState);
                 } else {
                     JOptionPane.showMessageDialog(null,
-                            "Matrix is not valid must be like:\n" + testSet +
-                            "\n\nYours are:\n" + sortedStartSet + "\n" + sortedEndSet);
+                            "Matrix is not valid must be like:\n" +
+                                    Arrays.toString(sortTest) +
+                            "\n\nYours are:\n"
+                                    + Arrays.toString(sortedStart)
+                                    + "\n" + Arrays.toString(sortedEnd));
                 }
             }
 
@@ -245,25 +279,19 @@ public class Main {
     }
 
 
-    public static void findEndState(String[] start, String[] end) {
-        int[] startState = new int[start.length];
-        int[] endState = new int[start.length];
-
-        //convert to ints
-        for(int i = 0; i < startState.length; i++) {
-            startState[i] = Integer.parseInt(start[i]);
-            endState[i] = Integer.parseInt(end[i]);
-        }
-
+    public static void findEndState(int[] startState, int[] endState) {
         State startNode = new State(startState, 0);
         State endNode = new State(endState, 0);
 
-        Set<State> open = new TreeSet<>();
+        List<State> open = new ArrayList<>();
         Set<State> closed = new LinkedHashSet<>(); //keep order of insertion
 
         int level = 1;
         boolean noGoal = true;
+
+        //if this size = 1 we need to got back and try another state
         open.addAll(Utils.getNextStates(startNode,level));
+
         State selectedNode = startNode;
 
         /*
@@ -277,6 +305,7 @@ public class Main {
          */
         Heuristic h1 = new ManhattanDistance();
         Heuristic h2 = new TilePlacement();
+        SortBySum sortBySum = new SortBySum();
 
         while (noGoal) {
             closed.add(selectedNode);// we selected this
@@ -296,10 +325,21 @@ public class Main {
 
                 System.out.println("Choose next state");
 
+
                 int index =1;
                 for(State s : open) {
-                    System.out.println("---------------(LEVEL " + level + ")----------------------\n" +
-                            index++ + ")\n" +s + "\nh + g = " + h2.calculateSum(s, endNode));
+                    if(s.getSum() == -1) s.setSum(h1.calculateSum(s, endNode));
+                }
+
+                /* We could have added this code to the previous loop but we want
+                 * to give the user best choice first so we have to  pre-calcuate
+                 * the sum, sort then print
+                 */
+                open.sort(sortBySum);
+                for(State s: open) {
+                    System.out.printf("---------------(LEVEL %d )" +
+                                    "----------------------\n%d)\n%s\nh = %d, g =%d\nh&g=%d\n",
+                            level, index++, s, s.getSum(), s.getLevel(), (s.getLevel() + s.getSum()));
                 }
 
                 Object[] oStates = open.toArray();
@@ -307,19 +347,26 @@ public class Main {
                         "Choose next state",
                         "Title", 0, null, oStates, oStates[0]);
 
-                /* We need to keep all these states even though I delete here because
-                 * in Tut for AI if we come to a state with only one move we need to go
-                 * back a level and add that to the closed state then pick next best
-                 * state from open
-                 */
+
+                level++;
+                List<State> nextStates = new ArrayList<>(Utils.getNextStates(selectedNode,level));
+
                 open.clear(); //delete other states
-                for(State op : Utils.getNextStates(selectedNode,level)) {
+
+                for(State op : nextStates) {
                     if(!closed.contains(op)) open.add(op); //only add states not used
                 }
 
-                level++;
+
             }
         }
-
     }
 }
+
+
+
+
+
+
+
+
